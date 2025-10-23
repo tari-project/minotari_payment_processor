@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, SqliteConnection};
+use std::fmt;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -27,13 +28,13 @@ impl From<String> for PaymentStatus {
     }
 }
 
-impl ToString for PaymentStatus {
-    fn to_string(&self) -> String {
+impl fmt::Display for PaymentStatus {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            PaymentStatus::Received => "RECEIVED".to_string(),
-            PaymentStatus::Batched => "BATCHED".to_string(),
-            PaymentStatus::Confirmed => "CONFIRMED".to_string(),
-            PaymentStatus::Failed => "FAILED".to_string(),
+            PaymentStatus::Received => write!(f, "RECEIVED"),
+            PaymentStatus::Batched => write!(f, "BATCHED"),
+            PaymentStatus::Confirmed => write!(f, "CONFIRMED"),
+            PaymentStatus::Failed => write!(f, "FAILED"),
         }
     }
 }

@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{Connection, FromRow, SqliteConnection};
+use std::fmt;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -37,17 +38,17 @@ impl From<String> for PaymentBatchStatus {
     }
 }
 
-impl ToString for PaymentBatchStatus {
-    fn to_string(&self) -> String {
+impl fmt::Display for PaymentBatchStatus {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            PaymentBatchStatus::PendingBatching => "PENDING_BATCHING".to_string(),
-            PaymentBatchStatus::AwaitingSignature => "AWAITING_SIGNATURE".to_string(),
-            PaymentBatchStatus::SigningInProgress => "SIGNING_IN_PROGRESS".to_string(),
-            PaymentBatchStatus::AwaitingBroadcast => "AWAITING_BROADCAST".to_string(),
-            PaymentBatchStatus::Broadcasting => "BROADCASTING".to_string(),
-            PaymentBatchStatus::AwaitingConfirmation => "AWAITING_CONFIRMATION".to_string(),
-            PaymentBatchStatus::Confirmed => "CONFIRMED".to_string(),
-            PaymentBatchStatus::Failed => "FAILED".to_string(),
+            PaymentBatchStatus::PendingBatching => write!(f, "PENDING_BATCHING"),
+            PaymentBatchStatus::AwaitingSignature => write!(f, "AWAITING_SIGNATURE"),
+            PaymentBatchStatus::SigningInProgress => write!(f, "SIGNING_IN_PROGRESS"),
+            PaymentBatchStatus::AwaitingBroadcast => write!(f, "AWAITING_BROADCAST"),
+            PaymentBatchStatus::Broadcasting => write!(f, "BROADCASTING"),
+            PaymentBatchStatus::AwaitingConfirmation => write!(f, "AWAITING_CONFIRMATION"),
+            PaymentBatchStatus::Confirmed => write!(f, "CONFIRMED"),
+            PaymentBatchStatus::Failed => write!(f, "FAILED"),
         }
     }
 }
@@ -364,7 +365,7 @@ impl PaymentBatch {
     ) -> Result<(), sqlx::Error> {
         let mut tx = pool.begin().await?;
 
-        let batch = Self::find_by_id(&mut *tx, batch_id)
+        let batch = Self::find_by_id(&mut tx, batch_id)
             .await?
             .ok_or_else(|| sqlx::Error::RowNotFound)?;
 
