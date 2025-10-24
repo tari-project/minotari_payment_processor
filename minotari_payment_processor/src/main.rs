@@ -12,6 +12,7 @@ struct PaymentProcessorEnv {
     pub payment_receiver: String,
     pub base_node: String,
     pub console_wallet_path: String,
+    pub console_wallet_password: String,
     pub listen_ip: String,
     pub listen_port: u16,
     pub batch_creator_sleep_secs: Option<u64>,
@@ -30,6 +31,8 @@ impl PaymentProcessorEnv {
         let base_node = std::env::var("BASE_NODE").map_err(|_| anyhow!("BASE_NODE environment variable not set"))?;
         let console_wallet_path = std::env::var("CONSOLE_WALLET_PATH")
             .map_err(|_| anyhow!("CONSOLE_WALLET_PATH environment variable not set"))?;
+        let console_wallet_password = std::env::var("CONSOLE_WALLET_PASSWORD")
+            .map_err(|_| anyhow!("CONSOLE_WALLET_PASSWORD environment variable not set"))?;
         let listen_ip = std::env::var("LISTEN_IP").unwrap_or_else(|_| "0.0.0.0".to_string());
         let listen_port = std::env::var("LISTEN_PORT")
             .unwrap_or_else(|_| "9145".to_string())
@@ -56,6 +59,7 @@ impl PaymentProcessorEnv {
             payment_receiver,
             base_node,
             console_wallet_path,
+            console_wallet_password,
             listen_ip,
             listen_port,
             batch_creator_sleep_secs,
@@ -98,6 +102,7 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(workers::transaction_signer::run(
         db_pool.clone(),
         env.console_wallet_path.clone(),
+        env.console_wallet_password.clone(),
         env.transaction_signer_sleep_secs,
     ));
     tokio::spawn(workers::broadcaster::run(

@@ -8,18 +8,27 @@ use crate::db::payment_batch::{PaymentBatch, PaymentBatchStatus};
 
 const DEFAULT_SLEEP_SECS: u64 = 10;
 
-pub async fn run(db_pool: SqlitePool, console_wallet_path: String, sleep_secs: Option<u64>) {
+pub async fn run(
+    db_pool: SqlitePool,
+    console_wallet_path: String,
+    console_wallet_password: String,
+    sleep_secs: Option<u64>,
+) {
     let sleep_secs = sleep_secs.unwrap_or(DEFAULT_SLEEP_SECS);
     let mut interval = time::interval(Duration::from_secs(sleep_secs));
     loop {
         interval.tick().await;
-        if let Err(e) = process_transactions_to_sign(&db_pool, &console_wallet_path).await {
+        if let Err(e) = process_transactions_to_sign(&db_pool, &console_wallet_path, &console_wallet_password).await {
             eprintln!("Transaction Signer worker error: {:?}", e);
         }
     }
 }
 
-async fn process_transactions_to_sign(db_pool: &SqlitePool, console_wallet_path: &str) -> Result<(), anyhow::Error> {
+async fn process_transactions_to_sign(
+    db_pool: &SqlitePool,
+    console_wallet_path: &str,
+    console_wallet_password: &str,
+) -> Result<(), anyhow::Error> {
     let mut conn = db_pool.acquire().await?;
     let batches = PaymentBatch::find_by_status(&mut conn, PaymentBatchStatus::AwaitingSignature).await?;
 
@@ -47,8 +56,10 @@ async fn process_transactions_to_sign(db_pool: &SqlitePool, console_wallet_path:
         let output_path_clone = output_file_path.clone();
 
         let console_wallet_path: String = console_wallet_path.to_string().clone();
+        let console_wallet_password = console_wallet_password.to_string().clone();
         let signing_result = tokio::task::spawn_blocking(move || {
             std::process::Command::new(console_wallet_path)
+                .env("MINOTARI_WALLET_PASSWORD", console_wallet_password)
                 .arg("sign-one-sided-transaction")
                 .arg("--input-file")
                 .arg(&input_path_clone)
