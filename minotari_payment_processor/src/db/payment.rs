@@ -399,6 +399,48 @@ impl Payment {
         .await
     }
 
+    fn from_payment_with_batch(row: PaymentWithBatch) -> (Self, Option<PaymentBatch>) {
+        let payment = Payment {
+            id: row.id,
+            client_id: row.client_id,
+            account_name: row.account_name,
+            status: row.status.into(),
+            payment_batch_id: row.payment_batch_id,
+            recipient_address: row.recipient_address,
+            amount: row.amount,
+            payment_id: row.payment_id,
+            failure_reason: row.failure_reason,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+            payref: row.payref,
+        };
+        let payment_batch = if let Some(batch_id) = row.batch_id {
+            Some(PaymentBatch {
+                id: batch_id,
+                account_name: row
+                    .batch_account_name
+                    .expect("batch_account_name is set if batch exists"),
+                status: row.batch_status.expect("batch_status is set if batch exists").into(),
+                pr_idempotency_key: row
+                    .batch_pr_idempotency_key
+                    .expect("pr_idempotency_key is set if batch exists"),
+                unsigned_tx_json: row.batch_unsigned_tx_json,
+                signed_tx_json: row.batch_signed_tx_json,
+                error_message: row.batch_error_message,
+                retry_count: row.batch_retry_count.expect("retry_count is set if batch exists"),
+                intermediate_context_json: row.batch_intermediate_context_json,
+                mined_height: row.batch_mined_height,
+                mined_header_hash: row.batch_mined_header_hash,
+                mined_timestamp: row.batch_mined_timestamp,
+                created_at: row.batch_created_at.expect("created_at is set if batch exists"),
+                updated_at: row.batch_updated_at.expect("updated_at is set if batch exists"),
+            })
+        } else {
+            None
+        };
+        (payment, payment_batch)
+    }
+
     /// Retrieves a payment by its ID, joining with payment_batches for more details.
     pub async fn get_by_id_with_batch_info(
         pool: &mut SqliteConnection,
@@ -442,42 +484,53 @@ impl Payment {
         )
         .fetch_optional(pool)
         .await
-        .map(|opt| {
-            opt.map(|row| {
-                let payment = Payment {
-                    id: row.id,
-                    client_id: row.client_id,
-                    account_name: row.account_name,
-                    status: row.status.into(),
-                    payment_batch_id: row.payment_batch_id,
-                    recipient_address: row.recipient_address,
-                    amount: row.amount,
-                    payment_id: row.payment_id,
-                    failure_reason: row.failure_reason,
-                    created_at: row.created_at,
-                    updated_at: row.updated_at,
-                    payref: row.payref,
-                };
-                let batch_id = row.batch_id.clone();
-                let payment_batch = batch_id.map(|_| PaymentBatch {
-                    id: row.batch_id.unwrap(),
-                    account_name: row.batch_account_name.unwrap(),
-                    status: row.batch_status.unwrap().into(),
-                    pr_idempotency_key: row.batch_pr_idempotency_key.unwrap(),
-                    unsigned_tx_json: row.batch_unsigned_tx_json,
-                    signed_tx_json: row.batch_signed_tx_json,
-                    error_message: row.batch_error_message,
-                    retry_count: row.batch_retry_count.unwrap(),
-                    intermediate_context_json: row.batch_intermediate_context_json,
-                    mined_height: row.batch_mined_height,
-                    mined_header_hash: row.batch_mined_header_hash,
-                    mined_timestamp: row.batch_mined_timestamp,
-                    created_at: row.batch_created_at.unwrap(),
-                    updated_at: row.batch_updated_at.unwrap(),
-                });
-                (payment, payment_batch)
-            })
-        })
+        .map(|opt| opt.map(Self::from_payment_with_batch))
+    }
+
+    /// Retrieves a payment by its payref, joining with payment_batches for more details.
+    pub async fn get_by_payref_with_batch_info(
+        pool: &mut SqliteConnection,
+        payref: &str,
+    ) -> Result<Option<(Self, Option<PaymentBatch>)>, sqlx::Error> {
+        sqlx::query_as!(
+            PaymentWithBatch,
+            r#"
+            SELECT
+                p.id,
+                p.client_id,
+                p.account_name,
+                p.status,
+                p.payment_batch_id,
+                p.recipient_address,
+                p.amount,
+                p.payment_id,
+                p.failure_reason,
+                p.created_at as "created_at: DateTime<Utc>",
+                p.updated_at as "updated_at: DateTime<Utc>",
+                p.payref,
+                pb.id as batch_id,
+                pb.account_name as batch_account_name,
+                pb.status as batch_status,
+                pb.pr_idempotency_key as batch_pr_idempotency_key,
+                pb.unsigned_tx_json as batch_unsigned_tx_json,
+                pb.signed_tx_json as batch_signed_tx_json,
+                pb.error_message as batch_error_message,
+                pb.retry_count as batch_retry_count,
+                pb.intermediate_context_json as batch_intermediate_context_json,
+                pb.mined_height as batch_mined_height,
+                pb.mined_header_hash as batch_mined_header_hash,
+                pb.mined_timestamp as batch_mined_timestamp,
+                pb.created_at as "batch_created_at: DateTime<Utc>",
+                pb.updated_at as "batch_updated_at: DateTime<Utc>"
+            FROM payments p
+            LEFT JOIN payment_batches pb ON p.payment_batch_id = pb.id
+            WHERE p.payref = ?
+            "#,
+            payref
+        )
+        .fetch_optional(pool)
+        .await
+        .map(|opt| opt.map(Self::from_payment_with_batch))
     }
 }
 

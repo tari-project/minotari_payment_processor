@@ -348,3 +348,28 @@ pub async fn api_cancel_payment(
         },
     }
 }
+
+#[utoipa::path(
+    get,
+    path = "/v1/payments/ref/{payref}",
+    params(
+        ("payref" = String, Path, description = "The payment reference (e.g. on-chain identifier)")
+    ),
+    responses(
+        (status = 200, description = "Payment retrieved successfully", body = PaymentResponse),
+        (status = 404, description = "Payment not found", body = ApiError),
+        (status = 500, description = "Internal server error", body = ApiError)
+    )
+)]
+pub async fn api_get_payment_by_payref(
+    State(db_pool): State<SqlitePool>,
+    Path(payref): Path<String>,
+) -> Result<Json<PaymentResponse>, ApiError> {
+    let mut conn = db_pool.acquire().await?;
+
+    let (payment, payment_batch) = Payment::get_by_payref_with_batch_info(&mut conn, &payref)
+        .await?
+        .ok_or_else(|| ApiError::NotFound("Payment not found".to_string()))?;
+
+    Ok(Json(PaymentResponse::from_payment_and_batch(payment, payment_batch)))
+}

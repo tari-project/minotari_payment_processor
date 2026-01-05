@@ -32,6 +32,7 @@ impl FromRef<AppState> for SqlitePool {
         payments::api_create_payment,
         payments::api_create_payment_batch,
         payments::api_get_payment,
+        payments::api_get_payment_by_payref,
         payments::api_cancel_payment,
     ),
     components(
@@ -62,6 +63,7 @@ pub fn create_router(db_pool: SqlitePool, env: PaymentProcessorEnv) -> Router {
         .route("/v1/payments", post(payments::api_create_payment))
         .route("/v1/payment-batches", post(payments::api_create_payment_batch))
         .route("/v1/payments/{payment_id}", get(payments::api_get_payment))
+        .route("/v1/payments/ref/{payref}", get(payments::api_get_payment_by_payref))
         .route("/v1/payments/{payment_id}/cancel", post(payments::api_cancel_payment))
         .with_state(app_state)
 }
