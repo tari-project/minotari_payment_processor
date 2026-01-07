@@ -1,4 +1,5 @@
 use anyhow::{Context, anyhow};
+use log::{error, info, warn};
 use minotari_node_wallet_client::{BaseNodeWalletClient, http::Client};
 use sqlx::{SqliteConnection, SqlitePool};
 use tari_transaction_components::rpc::models::TxLocation;
@@ -17,9 +18,9 @@ const MEMPOOL_CHECK_DELAY: Duration = Duration::from_secs(2);
 
 pub async fn run(db_pool: SqlitePool, base_node_client: Client, sleep_secs: Option<u64>) {
     let sleep_secs = sleep_secs.unwrap_or(DEFAULT_SLEEP_SECS);
-    println!(
-        "Transaction Broadcaster worker started. Polling every {} seconds.",
-        sleep_secs
+    info!(
+        interval = sleep_secs;
+        "Transaction Broadcaster worker started"
     );
 
     let mut interval = time::interval(Duration::from_secs(sleep_secs));
@@ -27,7 +28,10 @@ pub async fn run(db_pool: SqlitePool, base_node_client: Client, sleep_secs: Opti
     loop {
         interval.tick().await;
         if let Err(e) = process_transactions_to_broadcast(&db_pool, &base_node_client).await {
-            eprintln!("Transaction Broadcaster worker error: {:?}", e);
+            error!(
+                error:? = e;
+                "Transaction Broadcaster worker error"
+            );
         }
     }
 }
@@ -41,21 +45,29 @@ async fn process_transactions_to_broadcast(
     let batches = PaymentBatch::find_by_status(&mut conn, PaymentBatchStatus::AwaitingBroadcast).await?;
 
     if !batches.is_empty() {
-        println!("INFO: Found {} batches awaiting broadcast.", batches.len());
+        info!(
+            count = batches.len();
+            "Found batches awaiting broadcast"
+        );
     }
 
     for batch in batches {
         if let Err(e) = process_single_batch(&mut conn, base_node_client, &batch).await {
             let error_message = e.to_string();
-            eprintln!(
-                "Error broadcasting batch {}: {}. Attempting to revert status...",
-                batch.id, error_message
+            error!(
+                batch_id = &*batch.id,
+                error = &*error_message;
+                "Error broadcasting batch. Attempting to revert status..."
             );
 
             match PaymentBatch::update_to_awaiting_broadcast_for_retry(&mut conn, &batch.id).await {
-                Ok(_) => println!("INFO: Batch {} reverted to 'AwaitingBroadcast'.", batch.id),
+                Ok(_) => info!(batch_id = &*batch.id; "Batch reverted to 'AwaitingBroadcast'"),
                 Err(revert_e) => {
-                    eprintln!("CRITICAL: Failed to revert batch {} status: {:?}", batch.id, revert_e)
+                    error!(
+                        batch_id = &*batch.id,
+                        error:? = revert_e;
+                        "Failed to revert batch status"
+                    )
                 },
             }
         }
@@ -70,7 +82,7 @@ async fn process_single_batch(
     batch: &PaymentBatch,
 ) -> Result<(), anyhow::Error> {
     let batch_id = &batch.id;
-    println!("INFO: Starting broadcast sequence for Batch ID: {}", batch_id);
+    info!(batch_id = batch_id.as_str(); "Starting broadcast sequence");
 
     PaymentBatch::update_to_broadcasting(conn, batch_id)
         .await
@@ -84,11 +96,11 @@ async fn process_single_batch(
     let payload = BatchPayload::from_json(&signed_json_str)?;
     let is_consolidation_cycle = payload.steps.first().map(|s| s.is_consolidation).unwrap_or(false);
 
-    println!(
-        "INFO: Batch {}: Broadcasting {} transactions... (Consolidation: {})",
-        batch_id,
-        payload.steps.len(),
-        is_consolidation_cycle
+    info!(
+        batch_id = batch_id.as_str(),
+        tx_count = payload.steps.len(),
+        consolidation = is_consolidation_cycle;
+        "Broadcasting transactions"
     );
 
     let mut step_tx_objects = Vec::new();
@@ -104,12 +116,12 @@ async fn process_single_batch(
         let tx = signed_tx_wrapper.signed_transaction.transaction.clone();
         step_tx_objects.push(tx.clone());
 
-        println!(
-            "INFO: Batch {}: Submitting TX for Step {}/{} (Internal ID: {})",
-            batch_id,
-            i + 1,
-            payload.steps.len(),
-            step.tx_id
+        info!(
+            batch_id = batch_id.as_str(),
+            step = i + 1,
+            total_steps = payload.steps.len(),
+            internal_tx_id:? = step.tx_id;
+            "Submitting TX"
         );
 
         let response = base_node_client
@@ -118,13 +130,20 @@ async fn process_single_batch(
             .context("Network error submitting transaction to Base Node")?;
 
         if response.accepted {
-            println!("INFO: Batch {}: Step {} ACCEPTED by Base Node.", batch_id, i + 1);
+            info!(
+                target: "audit",
+                batch_id = batch_id.as_str(),
+                step = i + 1,
+                total_steps = payload.steps.len(),
+                internal_tx_id:? = step.tx_id;
+                "Transaction ACCEPTED by Base Node"
+            );
         } else {
-            println!(
-                "WARN: Batch {}: Step {} REJECTED by Base Node. Reason: {}",
-                batch_id,
-                i + 1,
-                response.rejection_reason
+            warn!(
+                batch_id = batch_id.as_str(),
+                step = i + 1,
+                reason:% = response.rejection_reason;
+                "Transaction REJECTED by Base Node"
             );
             return Err(anyhow!(
                 "Tari base node rejected transaction in step {}: {}",
@@ -136,17 +155,17 @@ async fn process_single_batch(
 
     if is_consolidation_cycle {
         // === SPLIT CYCLE DETECTED ===
-        println!(
-            "INFO: Batch {}: Split Cycle detected. Verifying Mempool propagation...",
-            batch_id
+        info!(
+            batch_id = batch_id.as_str();
+            "Split Cycle detected. Verifying Mempool propagation..."
         );
 
         verify_txs_in_mempool(base_node_client, &step_tx_objects).await?;
 
-        println!("INFO: Batch {}: All split transactions found in Mempool.", batch_id);
-        println!(
-            "INFO: Batch {}: LOOPING BACK state to 'PendingBatching' for Cycle 2.",
-            batch_id
+        info!(
+            target: "audit",
+            batch_id = batch_id.as_str();
+            "Split transactions in Mempool. LOOPING BACK state to 'PendingBatching' for Cycle 2."
         );
 
         PaymentBatch::reset_to_pending_batching(conn, batch_id)
@@ -154,9 +173,10 @@ async fn process_single_batch(
             .context("Failed to reset batch to PendingBatching")?;
     } else {
         // === NORMAL / FINAL CYCLE ===
-        println!(
-            "INFO: Batch {}: Final transaction submitted. Updating to 'AwaitingConfirmation'.",
-            batch_id
+        info!(
+            target: "audit",
+            batch_id = batch_id.as_str();
+            "Broadcast complete. Status updated to 'AwaitingConfirmation'."
         );
 
         PaymentBatch::update_to_awaiting_confirmation(conn, batch_id)

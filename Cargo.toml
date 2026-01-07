@@ -1,9 +1,6 @@
 [workspace]
 resolver = "3"
-members = [
-    "minotari_payment_processor",
-    "minotari-client",
-]
+members = ["minotari-client", "minotari_payment_processor"]
 
 [workspace.dependencies]
 serde = { version = "1.0.225", features = ["derive"] }

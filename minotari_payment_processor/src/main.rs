@@ -1,21 +1,25 @@
 use dotenv::dotenv;
+use log::info;
+use log4rs::config::RawConfig;
 use minotari_client::apis::configuration::Configuration as MinotariConfiguration;
 use minotari_node_wallet_client::http::Client as BaseNodeClient;
 use minotari_payment_processor::{api, config::PaymentProcessorEnv, db, workers};
-use std::sync::Arc;
+use std::{path::Path, sync::Arc};
 use tokio::{net::TcpListener, signal};
 use url::Url;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    init_logging();
+
     dotenv().ok();
     let env = PaymentProcessorEnv::load()?;
     let app_env = env.clone();
 
-    println!("Starting Minotari Payment Processor...");
+    info!("Starting Minotari Payment Processor...");
 
     let db_pool = db::init_db(&env.database_url).await?;
-    println!("Database initialized.");
+    info!("Database initialized.");
 
     let client_config = Arc::new(MinotariConfiguration {
         base_path: env.payment_receiver,
@@ -57,19 +61,47 @@ async fn main() -> anyhow::Result<()> {
         env.confirmation_checker_sleep_secs,
         env.confirmation_checker_required_confirmations.unwrap_or(10),
     ));
-    println!("Minotari Payment Processor started. Press Ctrl+C to shut down.");
+    info!("Minotari Payment Processor started. Press Ctrl+C to shut down.");
 
     // Create Axum API router
     let app = api::create_router(db_pool.clone(), app_env);
     let addr = format!("{}:{}", env.listen_ip, env.listen_port);
     let listener = TcpListener::bind(&addr).await?;
-    println!("Axum API server listening on {}", addr);
+    info!(
+        address = &*addr;
+        "Axum API server listening"
+    );
     tokio::spawn(async move {
         axum::serve(listener, app.into_make_service()).await.unwrap();
     });
 
     signal::ctrl_c().await?;
-    println!("Ctrl+C received, shutting down.");
+    info!("Ctrl+C received, shutting down.");
 
     Ok(())
+}
+
+fn init_logging() {
+    let config_path = "log4rs.yml";
+    let path = Path::new(config_path);
+
+    if path.exists() {
+        match log4rs::init_file(path, Default::default()) {
+            Ok(_) => {
+                info!(
+                    path = config_path;
+                    "Logging initialized from external configuration"
+                );
+                return;
+            },
+            Err(e) => {
+                panic!("Failed to load external log4rs.yml: {}", e);
+            },
+        }
+    }
+
+    let yaml_content = include_str!("../resources/default_log4rs.yml");
+    let config: RawConfig = serde_yaml::from_str(yaml_content).expect("Embedded logging configuration is invalid YAML");
+    log4rs::init_raw_config(config).expect("Failed to initialize logging from embedded config");
+    info!("Logging initialized from embedded defaults (no external log4rs.yml found)");
 }

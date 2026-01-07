@@ -1824,12 +1824,18 @@ dependencies = [
 
 [[package]]
 name = "log"
-version = "0.4.28"
+version = "0.4.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34080505efa8e45a4b816c349525ebe327ceaa8559756f0356cba97ef3bf7432"
+checksum = "5e5032e24019045c762d3c0f28f5b6b8bbf38563a65908389bf7978758920897"
 dependencies = [
- "serde",
+ "serde_core",
 ]
+
+[[package]]
+name = "log-mdc"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a94d21414c1f4a51209ad204c1776a3d0765002c76c6abcb602a6f09f1e881c7"
 
 [[package]]
 name = "log4rs"
@@ -1839,17 +1845,25 @@ checksum = "3e947bb896e702c711fccc2bf02ab2abb6072910693818d1d6b07ee2b9dfd86c"
 dependencies = [
  "anyhow",
  "arc-swap",
+ "chrono",
  "derive_more",
  "fnv",
  "humantime",
+ "libc",
  "log",
+ "log-mdc",
  "mock_instant",
+ "parking_lot",
+ "rand 0.9.2",
  "serde",
  "serde-value",
+ "serde_json",
  "serde_yaml",
  "thiserror 2.0.17",
+ "thread-id",
  "typemap-ors",
  "unicode-segmentation",
+ "winapi",
 ]
 
 [[package]]
@@ -1973,10 +1987,13 @@ dependencies = [
  "config 0.15.19",
  "dotenv",
  "hex",
+ "log",
+ "log4rs",
  "minotari-client",
  "minotari_node_wallet_client",
  "serde",
  "serde_json",
+ "serde_yaml",
  "sqlx",
  "tari_common",
  "tari_common_types",
@@ -4088,6 +4105,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a3ad459d94dd517257cc96add8a43190ee620011bb6e6cdc82dafd97dfafafea"
 dependencies = [
  "thiserror-impl-no-std",
+]
+
+[[package]]
+name = "thread-id"
+version = "5.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "99043e46c5a15af379c06add30d9c93a6c0e8849de00d244c4a2c417da128d80"
+dependencies = [
+ "libc",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

@@ -1,0 +1,50 @@
+appenders:
+  stdout:
+    kind: console
+    encoder:
+      kind: json
+
+  audit_file:
+    kind: rolling_file
+    path: "logs/audit.log"
+    encoder:
+      kind: json
+    policy:
+      kind: compound
+      trigger:
+        kind: size
+        limit: 10mb
+      roller:
+        kind: fixed_window
+        pattern: "logs/audit.{}.log"
+        base: 1
+        count: 5
+
+root:
+  level: info
+  appenders:
+    - stdout
+
+loggers:
+  "minotari_payment_processor":
+    level: debug
+
+  "audit":
+    level: info
+    additive: false
+    appenders:
+      - stdout
+      - audit_file
+
+  "sqlx":
+    level: warn
+
+  "tower_http":
+    level: debug
+  "hyper":
+    level: warn
+  "h2":
+    level: error
+
+  "minotari_node_wallet_client":
+    level: info

@@ -1,4 +1,5 @@
 use axum::Json;
+use log::debug;
 use serde::Serialize;
 use utoipa::ToSchema;
 
@@ -23,5 +24,6 @@ impl ServiceVersion {
     )
 )]
 pub async fn api_get_version() -> Json<ServiceVersion> {
+    debug!("API: Version request received");
     Json(ServiceVersion::new())
 }
