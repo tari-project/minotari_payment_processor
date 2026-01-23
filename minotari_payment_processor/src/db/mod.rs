@@ -1,3 +1,4 @@
+pub mod event;
 pub mod payment;
 pub mod payment_batch;
 

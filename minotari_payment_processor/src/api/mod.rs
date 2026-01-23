@@ -10,6 +10,7 @@ use utoipa_swagger_ui::SwaggerUi;
 use crate::config::PaymentProcessorEnv;
 
 mod error;
+mod events;
 mod payments;
 mod version;
 
@@ -34,6 +35,7 @@ impl FromRef<AppState> for SqlitePool {
         payments::api_get_payment,
         payments::api_get_payment_by_payref,
         payments::api_cancel_payment,
+        events::api_get_events,
     ),
     components(
         schemas(
@@ -44,6 +46,9 @@ impl FromRef<AppState> for SqlitePool {
             payments::BulkPaymentResponse,
             payments::PaymentResponse,
             payments::PaymentCancelResponse,
+            crate::db::event::Event,
+            crate::db::event::EventType,
+            crate::api::events::EventListResponse,
             crate::db::payment::PaymentStatus,
             error::ApiError,
         )
@@ -65,5 +70,6 @@ pub fn create_router(db_pool: SqlitePool, env: PaymentProcessorEnv) -> Router {
         .route("/v1/payments/{payment_id}", get(payments::api_get_payment))
         .route("/v1/payments/ref/{payref}", get(payments::api_get_payment_by_payref))
         .route("/v1/payments/{payment_id}/cancel", post(payments::api_cancel_payment))
+        .route("/v1/events", get(events::api_get_events))
         .with_state(app_state)
 }

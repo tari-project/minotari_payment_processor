@@ -9,6 +9,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::{
+    db::event::{Event, EventType},
     db::payment::{Payment, PaymentStatus},
     utils::log::mask_string,
 };
@@ -215,6 +216,20 @@ impl PaymentBatch {
         .execute(&mut *tx)
         .await?;
 
+        Event::insert(
+            &mut *tx,
+            EventType::BatchCreated,
+            format!("Batch created with {} payments", payment_ids.len()),
+            Some(serde_json::json!({
+                "payment_count": payment_ids.len(),
+                "pr_idempotency_key": pr_idempotency_key
+            })),
+            account_name.to_string(),
+            None,
+            Some(batch.id.clone()),
+        )
+        .await?;
+
         tx.commit().await?;
 
         info!(
@@ -224,6 +239,7 @@ impl PaymentBatch {
             count = payment_ids.len();
             "DB: Payment Batch Created"
         );
+
         Ok(batch)
     }
 
@@ -266,7 +282,7 @@ impl PaymentBatch {
         batch_id: &str,
         update: &PaymentBatchUpdate<'_>,
         increment_retry_count: bool,
-    ) -> Result<(), sqlx::Error> {
+    ) -> Result<String, sqlx::Error> {
         let status_log = update
             .status
             .as_ref()
@@ -350,9 +366,11 @@ impl PaymentBatch {
         }
 
         qb.push(" WHERE id = ").push_bind(batch_id);
-        qb.build().execute(pool).await?;
+        qb.push(" RETURNING account_name");
 
-        Ok(())
+        let account_name: String = qb.build_query_scalar().fetch_one(pool).await?;
+
+        Ok(account_name)
     }
 
     /// Updates a payment batch to 'AWAITING_SIGNATURE' status with unsigned transaction details.
@@ -366,7 +384,9 @@ impl PaymentBatch {
             unsigned_tx_json: Some(unsigned_tx_json),
             ..Default::default()
         };
-        Self::update_payment_batch_status(pool, batch_id, &update, false).await
+        Self::update_payment_batch_status(pool, batch_id, &update, false)
+            .await
+            .map(|_| ())
     }
 
     /// Updates a payment batch to 'SIGNING_IN_PROGRESS' status.
@@ -375,7 +395,9 @@ impl PaymentBatch {
             status: Some(PaymentBatchStatus::SigningInProgress),
             ..Default::default()
         };
-        Self::update_payment_batch_status(pool, batch_id, &update, false).await
+        Self::update_payment_batch_status(pool, batch_id, &update, false)
+            .await
+            .map(|_| ())
     }
 
     /// Updates a payment batch to 'AWAITING_BROADCAST' status with signed transaction details.
@@ -391,7 +413,20 @@ impl PaymentBatch {
             intermediate_context_json,
             ..Default::default()
         };
-        Self::update_payment_batch_status(pool, batch_id, &update, false).await
+        let account_name = Self::update_payment_batch_status(pool, batch_id, &update, false).await?;
+
+        Event::insert(
+            pool,
+            EventType::BatchSigned,
+            "Batch signed successfully, awaiting broadcast".to_string(),
+            None,
+            account_name,
+            None,
+            Some(batch_id.to_string()),
+        )
+        .await?;
+
+        Ok(())
     }
 
     /// Updates a payment batch to 'AWAITING_BROADCAST' status for retry.
@@ -403,7 +438,9 @@ impl PaymentBatch {
             status: Some(PaymentBatchStatus::AwaitingBroadcast),
             ..Default::default()
         };
-        Self::update_payment_batch_status(pool, batch_id, &update, true).await
+        Self::update_payment_batch_status(pool, batch_id, &update, true)
+            .await
+            .map(|_| ())
     }
 
     /// Updates a payment batch to 'BROADCASTING' status.
@@ -412,7 +449,9 @@ impl PaymentBatch {
             status: Some(PaymentBatchStatus::Broadcasting),
             ..Default::default()
         };
-        Self::update_payment_batch_status(pool, batch_id, &update, false).await
+        Self::update_payment_batch_status(pool, batch_id, &update, false)
+            .await
+            .map(|_| ())
     }
 
     /// Updates a payment batch to 'AWAITING_CONFIRMATION' status with the on-chain transaction hash.
@@ -425,7 +464,9 @@ impl PaymentBatch {
             intermediate_context_json: Some(""),
             ..Default::default()
         };
-        Self::update_payment_batch_status(pool, batch_id, &update, false).await
+        Self::update_payment_batch_status(pool, batch_id, &update, false)
+            .await
+            .map(|_| ())
     }
 
     pub async fn reset_to_pending_batching(pool: &mut SqliteConnection, batch_id: &str) -> Result<(), sqlx::Error> {
@@ -433,7 +474,9 @@ impl PaymentBatch {
             status: Some(PaymentBatchStatus::PendingBatching),
             ..Default::default()
         };
-        Self::update_payment_batch_status(pool, batch_id, &update, false).await
+        Self::update_payment_batch_status(pool, batch_id, &update, false)
+            .await
+            .map(|_| ())
     }
 
     /// Updates a payment batch to 'CONFIRMED' status.
@@ -447,11 +490,28 @@ impl PaymentBatch {
         let update = PaymentBatchUpdate {
             status: Some(PaymentBatchStatus::Confirmed),
             mined_height: Some(mined_height as i64),
-            mined_header_hash: Some(&hex::encode(mined_header_hash)),
+            mined_header_hash: Some(&hex::encode(mined_header_hash.clone())),
             mined_timestamp: Some(mined_timestamp as i64),
             ..Default::default()
         };
-        Self::update_payment_batch_status(pool, batch_id, &update, false).await
+        let account_name = Self::update_payment_batch_status(pool, batch_id, &update, false).await?;
+
+        Event::insert(
+            pool,
+            EventType::TransactionConfirmed,
+            format!("Batch confirmed at height {}", mined_height),
+            Some(serde_json::json!({
+                "height": mined_height,
+                "header_hash": hex::encode(mined_header_hash),
+                "timestamp": mined_timestamp
+            })),
+            account_name,
+            None,
+            Some(batch_id.to_string()),
+        )
+        .await?;
+
+        Ok(())
     }
 
     /// Updates a payment batch to 'FAILED' status with an error message.
@@ -472,8 +532,19 @@ impl PaymentBatch {
             error_message: Some(error_message),
             ..Default::default()
         };
-        Self::update_payment_batch_status(&mut tx, batch_id, &update, false).await?;
+        let account_name = Self::update_payment_batch_status(&mut tx, batch_id, &update, false).await?;
         Payment::fail_payments_in_batch(&mut tx, batch_id, error_message).await?;
+
+        Event::insert(
+            &mut tx,
+            EventType::BatchFailed,
+            format!("Batch failed: {}", error_message),
+            Some(serde_json::json!({ "error": error_message })),
+            account_name,
+            None,
+            Some(batch_id.to_string()),
+        )
+        .await?;
 
         tx.commit().await?;
 
@@ -547,7 +618,9 @@ impl PaymentBatch {
             status: Some(PaymentBatchStatus::Cancelled),
             ..Default::default()
         };
-        Self::update_payment_batch_status(tx, batch_id, &update, false).await
+        Self::update_payment_batch_status(tx, batch_id, &update, false)
+            .await
+            .map(|_| ())
     }
 
     /// Used when a payment is removed/cancelled from an active batch.
