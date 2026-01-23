@@ -217,7 +217,7 @@ impl PaymentBatch {
         .await?;
 
         Event::insert(
-            &mut *tx,
+            &mut tx,
             EventType::BatchCreated,
             format!("Batch created with {} payments", payment_ids.len()),
             Some(serde_json::json!({
