@@ -14,7 +14,7 @@ log = { version = "0.4.29", features = ["kv"] }
 log4rs = { version = "1.4.0", features = ["yaml_format", "console_appender", "file_appender", "log_kv"] }
 minotari-client = { path = "../minotari-client" }
 
-minotari_node_wallet_client  = { git = "https://github.com/tari-project/tari/", rev = "9406e482007ac8b8c63db8b76fd8fd92d244ca09" }
+minotari_node_wallet_client  = { git = "https://github.com/tari-project/tari/", rev = "766f80ccc20596413ee208311750c11e02a2841d" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = "0.9.34"
@@ -25,11 +25,11 @@ sqlx = { version = "0.8.6", features = [
     "macros",
     "chrono",
 ] }
-tari_common = { git = "https://github.com/tari-project/tari/", rev = "9406e482007ac8b8c63db8b76fd8fd92d244ca09" }
-tari_common_types = { git = "https://github.com/tari-project/tari/", rev = "9406e482007ac8b8c63db8b76fd8fd92d244ca09" }
+tari_common = { git = "https://github.com/tari-project/tari/", rev = "766f80ccc20596413ee208311750c11e02a2841d" }
+tari_common_types = { git = "https://github.com/tari-project/tari/", rev = "766f80ccc20596413ee208311750c11e02a2841d" }
 tari_crypto = { version = "0.22.1", features = ["borsh"] }
-tari_script  = { git = "https://github.com/tari-project/tari/", rev = "9406e482007ac8b8c63db8b76fd8fd92d244ca09" }
-tari_transaction_components  = { git = "https://github.com/tari-project/tari/", rev = "9406e482007ac8b8c63db8b76fd8fd92d244ca09" }
+tari_script  = { git = "https://github.com/tari-project/tari/", rev = "766f80ccc20596413ee208311750c11e02a2841d" }
+tari_transaction_components  = { git = "https://github.com/tari-project/tari/", rev = "766f80ccc20596413ee208311750c11e02a2841d" }
 tari_utilities = { version = "0.8" }
 tempfile = "3.23.0"
 thiserror = "2.0.17"

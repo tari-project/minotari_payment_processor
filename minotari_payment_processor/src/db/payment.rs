@@ -7,6 +7,7 @@ use std::fmt;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use crate::db::event::{Event, EventType};
 use crate::db::payment_batch::{PaymentBatch, PaymentBatchStatus};
 use crate::utils::log::{mask_amount, mask_string};
 
@@ -81,6 +82,7 @@ impl Payment {
         let id = Uuid::new_v4().to_string();
         let status = PaymentStatus::Received.to_string();
 
+        let mut tx = pool.begin().await?;
         let payment = sqlx::query_as!(
             Payment,
             r#"
@@ -109,7 +111,7 @@ impl Payment {
             payment_id,
             payref
         )
-        .fetch_one(pool)
+        .fetch_one(&mut *tx)
         .await?;
 
         info!(
@@ -119,6 +121,23 @@ impl Payment {
             amount = &*mask_amount(payment.amount);
             "DB: Payment Created"
         );
+
+        Event::insert(
+            &mut tx,
+            EventType::PaymentReceived,
+            format!("Payment received for {}", mask_string(recipient_address)),
+            Some(serde_json::json!({
+                "amount": amount,
+                "recipient": recipient_address,
+                "client_id": client_id
+            })),
+            account_name.to_string(),
+            Some(payment.id.clone()),
+            None,
+        )
+        .await?;
+
+        tx.commit().await?;
 
         Ok(payment)
     }
