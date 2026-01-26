@@ -277,6 +277,44 @@ impl PaymentBatch {
         .await
     }
 
+    /// Finds confirmed batches that were mined at or after the given height.
+    /// Used for reorg detection - if a reorg happens, we need to re-check
+    /// confirmed batches that may have been affected.
+    pub async fn find_confirmed_at_or_after_height(
+        pool: &mut SqliteConnection,
+        height: u64,
+    ) -> Result<Vec<Self>, sqlx::Error> {
+        let status = PaymentBatchStatus::Confirmed.to_string();
+        let height = height as i64;
+        sqlx::query_as!(
+            PaymentBatch,
+            r#"
+            SELECT
+                id,
+                account_name,
+                status,
+                pr_idempotency_key,
+                unsigned_tx_json,
+                signed_tx_json,
+                error_message,
+                retry_count,
+                intermediate_context_json,
+                mined_height,
+                mined_header_hash,
+                mined_timestamp,
+                created_at as "created_at: DateTime<Utc>",
+                updated_at as "updated_at: DateTime<Utc>"
+            FROM payment_batches
+            WHERE status = ? AND mined_height >= ?
+            ORDER BY mined_height ASC
+            "#,
+            status,
+            height
+        )
+        .fetch_all(pool)
+        .await
+    }
+
     async fn update_payment_batch_status(
         pool: &mut SqliteConnection,
         batch_id: &str,
@@ -510,6 +548,68 @@ impl PaymentBatch {
             Some(batch_id.to_string()),
         )
         .await?;
+
+        Ok(())
+    }
+
+    /// Reverts a confirmed batch back to AWAITING_CONFIRMATION due to a chain reorg.
+    /// Clears the mined_height, mined_header_hash, and mined_timestamp fields.
+    pub async fn revert_to_awaiting_confirmation_due_to_reorg(
+        pool: &mut SqliteConnection,
+        batch_id: &str,
+        original_height: Option<i64>,
+    ) -> Result<(), sqlx::Error> {
+        warn!(
+            batch_id = batch_id,
+            original_height:? = original_height;
+            "DB: Reverting Batch to AWAITING_CONFIRMATION due to reorg"
+        );
+
+        let status = PaymentBatchStatus::AwaitingConfirmation.to_string();
+        sqlx::query!(
+            r#"
+            UPDATE payment_batches
+            SET status = ?,
+                mined_height = NULL,
+                mined_header_hash = NULL,
+                mined_timestamp = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            "#,
+            status,
+            batch_id
+        )
+        .execute(&mut *pool)
+        .await?;
+
+        // Get account name for the event
+        let batch = Self::find_by_id(pool, batch_id)
+            .await?
+            .ok_or(sqlx::Error::RowNotFound)?;
+
+        Event::insert(
+            pool,
+            EventType::TransactionReorged,
+            format!(
+                "Batch reverted due to chain reorg (original height: {:?})",
+                original_height
+            ),
+            Some(serde_json::json!({
+                "original_height": original_height,
+                "new_status": "AWAITING_CONFIRMATION"
+            })),
+            batch.account_name,
+            None,
+            Some(batch_id.to_string()),
+        )
+        .await?;
+
+        info!(
+            target: "audit",
+            batch_id = batch_id,
+            original_height:? = original_height;
+            "DB: Batch REORGED - reverted to AWAITING_CONFIRMATION"
+        );
 
         Ok(())
     }

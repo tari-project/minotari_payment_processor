@@ -16,6 +16,7 @@ pub enum EventType {
     TransactionBroadcastFailed,
     TransactionMempoolDetected,
     TransactionConfirmed,
+    TransactionReorged,
     BatchFailed,
 }
 
