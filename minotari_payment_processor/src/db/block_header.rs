@@ -107,9 +107,8 @@ impl BlockHeader {
 
     /// Gets the count of stored headers.
     pub async fn count(pool: &mut SqliteConnection) -> Result<i64, sqlx::Error> {
-        let result = sqlx::query_scalar!(r#"SELECT COUNT(*) as "count: i64" FROM block_headers"#)
+        sqlx::query_scalar!(r#"SELECT COUNT(*) as "count: i64" FROM block_headers"#)
             .fetch_one(pool)
-            .await?;
-        Ok(result.unwrap_or(0))
+            .await
     }
 }

@@ -100,7 +100,16 @@ async fn check_for_reorgs_and_update_headers(
 
     let new_tip_height = metadata.best_block_height();
     let new_tip_hash = hex::encode(metadata.best_block_hash());
-    let new_tip_prev_hash = hex::encode(metadata.prev_hash());
+
+    let tip_header = base_node_client
+        .get_header_by_height(new_tip_height)
+        .await
+        .context("Failed to get tip header from Base Node")?
+        .into_iter()
+        .find(|h| hex::encode(&h.hash) == new_tip_hash)
+        .ok_or_else(|| anyhow!("Tip header not found at reported height"))?;
+
+    let new_tip_prev_hash = hex::encode(tip_header.prev_hash);
 
     let mut conn = db_pool.acquire().await?;
 
@@ -177,14 +186,12 @@ async fn find_reorg_height(
     // Walk back through the chain to find where they diverge
     loop {
         // Get the header at this height from the base node
-        let headers = base_node_client
+        let header = base_node_client
             .get_header_by_height(check_height)
             .await
             .context("Failed to get header from base node")?;
 
-        let node_header = headers
-            .first()
-            .ok_or_else(|| anyhow!("No header returned for height {}", check_height))?;
+        let node_header = header.ok_or_else(|| anyhow!("No header returned for height {}", check_height))?;
 
         let node_hash = hex::encode(&node_header.hash);
 
@@ -272,14 +279,12 @@ async fn update_stored_headers(
                 (tip_hash.to_string(), tip_prev_hash.to_string())
             } else {
                 // Fetch from base node
-                let headers = base_node_client
+                let header = base_node_client
                     .get_header_by_height(height)
                     .await
                     .context("Failed to get header from base node")?;
 
-                let header = headers
-                    .first()
-                    .ok_or_else(|| anyhow!("No header returned for height {}", height))?;
+                let header = header.ok_or_else(|| anyhow!("No header returned for height {}", height))?;
 
                 (hex::encode(&header.hash), hex::encode(&header.prev_hash))
             };
@@ -391,20 +396,20 @@ async fn check_and_handle_batch_reorg(
                 if current_hash != stored_hash {
                     // Re-mined in a different block
                     warn!(
-                        batch_id = batch_id,
+                        batch_id = batch_id.as_str(),
                         stored_hash = stored_hash.as_str(),
                         current_hash = current_hash.as_str();
                         "Transaction re-mined in different block after reorg"
                     );
                     handle_reorg_and_remine(db_pool, batch_id, &tx_query_response).await?;
                 } else {
-                    debug!(batch_id = batch_id; "Transaction still in same block after reorg check");
+                    debug!(batch_id = batch_id.as_str(); "Transaction still in same block after reorg check");
                 }
             }
         },
         TxLocation::InMempool => {
             warn!(
-                batch_id = batch_id,
+                batch_id = batch_id.as_str(),
                 original_height:? = batch.mined_height;
                 "Confirmed transaction found in mempool - REORG DETECTED"
             );
@@ -412,7 +417,7 @@ async fn check_and_handle_batch_reorg(
         },
         TxLocation::None | TxLocation::NotStored => {
             warn!(
-                batch_id = batch_id,
+                batch_id = batch_id.as_str(),
                 original_height:? = batch.mined_height,
                 location:? = tx_query_response.location;
                 "Confirmed transaction not found on chain - REORG DETECTED"
@@ -609,7 +614,7 @@ async fn handle_reorg(db_pool: &SqlitePool, batch: &PaymentBatch) -> Result<(), 
 
     info!(
         target: "audit",
-        batch_id = batch_id,
+        batch_id = batch_id.as_str(),
         original_height:? = original_height;
         "Handling reorg - reverting batch and payments"
     );
@@ -635,7 +640,7 @@ async fn handle_reorg(db_pool: &SqlitePool, batch: &PaymentBatch) -> Result<(), 
 
     warn!(
         target: "audit",
-        batch_id = batch_id,
+        batch_id = batch_id.as_str(),
         original_height:? = original_height;
         "REORG HANDLED - batch reverted to AWAITING_CONFIRMATION, payments reverted to BATCHED"
     );
@@ -664,7 +669,7 @@ async fn handle_reorg_and_remine(
         target: "audit",
         batch_id = batch_id,
         new_height = new_height,
-        new_header_hash = hex::encode(&new_header_hash);
+        new_header_hash = hex::encode(&new_header_hash).as_str();
         "Transaction re-mined after reorg - updating mined info"
     );
 
