@@ -106,7 +106,7 @@ async fn check_for_reorgs_and_update_headers(
         .await
         .context("Failed to get tip header from Base Node")?
         .into_iter()
-        .find(|h| hex::encode(&h.hash) == new_tip_hash)
+        .find(|h| hex::encode(h.hash) == new_tip_hash)
         .ok_or_else(|| anyhow!("Tip header not found at reported height"))?;
 
     let new_tip_prev_hash = hex::encode(tip_header.prev_hash);
@@ -193,7 +193,7 @@ async fn find_reorg_height(
 
         let node_header = header.ok_or_else(|| anyhow!("No header returned for height {}", check_height))?;
 
-        let node_hash = hex::encode(&node_header.hash);
+        let node_hash = hex::encode(node_header.hash);
 
         // Check if we have this header stored
         if let Some(stored_header) = BlockHeader::get_by_height(&mut conn, check_height).await? {
@@ -286,7 +286,7 @@ async fn update_stored_headers(
 
                 let header = header.ok_or_else(|| anyhow!("No header returned for height {}", height))?;
 
-                (hex::encode(&header.hash), hex::encode(&header.prev_hash))
+                (hex::encode(header.hash), hex::encode(header.prev_hash))
             };
 
             BlockHeader::upsert(&mut conn, height, &hash, &prev_hash).await?;
