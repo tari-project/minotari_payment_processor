@@ -341,6 +341,40 @@ impl Payment {
         Ok(())
     }
 
+    /// Reverts all payments in a batch from CONFIRMED back to BATCHED due to a chain reorg.
+    /// Clears the payref field since it's no longer valid after the reorg.
+    pub async fn revert_payments_to_batched_due_to_reorg(
+        pool: &mut SqliteConnection,
+        batch_id: &str,
+    ) -> Result<(), sqlx::Error> {
+        warn!(
+            batch_id = batch_id;
+            "DB: Reverting payments in batch to BATCHED due to reorg"
+        );
+        let status_batched = PaymentStatus::Batched.to_string();
+        let status_confirmed = PaymentStatus::Confirmed.to_string();
+        sqlx::query!(
+            r#"
+            UPDATE payments
+            SET status = ?, payref = NULL, updated_at = CURRENT_TIMESTAMP
+            WHERE payment_batch_id = ? AND status = ?
+            "#,
+            status_batched,
+            batch_id,
+            status_confirmed
+        )
+        .execute(pool)
+        .await?;
+
+        info!(
+            target: "audit",
+            batch_id = batch_id;
+            "DB: Payments REORGED - reverted to BATCHED"
+        );
+
+        Ok(())
+    }
+
     /// Updates the status of a list of payments to 'FAILED' with a reason.
     pub async fn update_payments_to_failed(
         pool: &mut SqliteConnection,
