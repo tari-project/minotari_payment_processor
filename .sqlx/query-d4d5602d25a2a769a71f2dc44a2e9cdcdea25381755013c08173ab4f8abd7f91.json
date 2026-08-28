@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT MIN(height) as \"height: i64\" FROM block_headers",
+  "describe": {
+    "columns": [
+      {
+        "name": "height: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "d4d5602d25a2a769a71f2dc44a2e9cdcdea25381755013c08173ab4f8abd7f91"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            UPDATE payment_batches\n            SET status = ?,\n                unsigned_tx_json = NULL,\n                signed_tx_json = NULL,\n                updated_at = CURRENT_TIMESTAMP\n            WHERE id = ?\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "a977ae39b80f1e7c6d5f0cdcd029b459b1009ec6a4f79d99b04909f4572fc216"
+}

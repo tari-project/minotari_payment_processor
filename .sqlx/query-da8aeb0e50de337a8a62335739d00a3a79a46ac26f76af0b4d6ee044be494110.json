@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            INSERT INTO block_headers (height, header_hash, prev_hash)\n            VALUES (?, ?, ?)\n            ON CONFLICT(height) DO UPDATE SET\n                header_hash = excluded.header_hash,\n                prev_hash = excluded.prev_hash,\n                created_at = CURRENT_TIMESTAMP\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "da8aeb0e50de337a8a62335739d00a3a79a46ac26f76af0b4d6ee044be494110"
+}
