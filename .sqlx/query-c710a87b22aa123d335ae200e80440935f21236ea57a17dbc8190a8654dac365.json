@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        UPDATE payment_batches\n        SET mined_height = ?, mined_header_hash = ?, mined_timestamp = ?, updated_at = CURRENT_TIMESTAMP\n        WHERE id = ?\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "c710a87b22aa123d335ae200e80440935f21236ea57a17dbc8190a8654dac365"
+}

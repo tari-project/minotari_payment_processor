@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            UPDATE payments\n            SET status = ?, payref = NULL, updated_at = CURRENT_TIMESTAMP\n            WHERE payment_batch_id = ? AND status = ?\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "a1fe7a22d33ce3a37796b6ddf4435393ebeb01f9f156077cb04a23a3f161a69c"
+}

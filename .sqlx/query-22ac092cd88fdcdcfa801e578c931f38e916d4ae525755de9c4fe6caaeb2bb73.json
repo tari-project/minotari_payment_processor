@@ -1,0 +1,98 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            SELECT\n                id,\n                account_name,\n                status,\n                pr_idempotency_key,\n                unsigned_tx_json,\n                signed_tx_json,\n                error_message,\n                retry_count,\n                intermediate_context_json,\n                mined_height,\n                mined_header_hash,\n                mined_timestamp,\n                created_at as \"created_at: DateTime<Utc>\",\n                updated_at as \"updated_at: DateTime<Utc>\"\n            FROM payment_batches\n            WHERE status = ? AND mined_height >= ?\n            ORDER BY mined_height ASC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "account_name",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "status",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "pr_idempotency_key",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "unsigned_tx_json",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "signed_tx_json",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "error_message",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "retry_count",
+        "ordinal": 7,
+        "type_info": "Integer"
+      },
+      {
+        "name": "intermediate_context_json",
+        "ordinal": 8,
+        "type_info": "Text"
+      },
+      {
+        "name": "mined_height",
+        "ordinal": 9,
+        "type_info": "Integer"
+      },
+      {
+        "name": "mined_header_hash",
+        "ordinal": 10,
+        "type_info": "Text"
+      },
+      {
+        "name": "mined_timestamp",
+        "ordinal": 11,
+        "type_info": "Integer"
+      },
+      {
+        "name": "created_at: DateTime<Utc>",
+        "ordinal": 12,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "updated_at: DateTime<Utc>",
+        "ordinal": 13,
+        "type_info": "Datetime"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "22ac092cd88fdcdcfa801e578c931f38e916d4ae525755de9c4fe6caaeb2bb73"
+}

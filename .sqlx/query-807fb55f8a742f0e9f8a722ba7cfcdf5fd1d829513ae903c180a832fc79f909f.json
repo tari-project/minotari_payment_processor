@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM block_headers WHERE height >= ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "807fb55f8a742f0e9f8a722ba7cfcdf5fd1d829513ae903c180a832fc79f909f"
+}

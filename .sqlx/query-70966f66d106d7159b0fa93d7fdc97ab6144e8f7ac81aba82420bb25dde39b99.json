@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            UPDATE payments\n            SET \n                status = ?, \n                payment_batch_id = COALESCE(?, payment_batch_id), \n                failure_reason = ?, \n                updated_at = CURRENT_TIMESTAMP\n            WHERE id IN (SELECT value FROM json_each(?))\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "70966f66d106d7159b0fa93d7fdc97ab6144e8f7ac81aba82420bb25dde39b99"
+}

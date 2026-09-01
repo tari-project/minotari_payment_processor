@@ -1,0 +1,86 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            INSERT INTO payments (id, client_id, account_name, status, recipient_address, amount, payment_id, payref)\n            VALUES (?, ?, ?, ?, ?, ?, ?, ?)\n            RETURNING\n                id,\n                client_id,\n                account_name,\n                status,\n                payment_batch_id,\n                recipient_address,\n                amount,\n                payment_id,\n                payref,\n                failure_reason,\n                created_at as \"created_at: DateTime<Utc>\",\n                updated_at as \"updated_at: DateTime<Utc>\"\n            ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "client_id",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "account_name",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "status",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "payment_batch_id",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "recipient_address",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "amount",
+        "ordinal": 6,
+        "type_info": "Integer"
+      },
+      {
+        "name": "payment_id",
+        "ordinal": 7,
+        "type_info": "Text"
+      },
+      {
+        "name": "payref",
+        "ordinal": 8,
+        "type_info": "Text"
+      },
+      {
+        "name": "failure_reason",
+        "ordinal": 9,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at: DateTime<Utc>",
+        "ordinal": 10,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "updated_at: DateTime<Utc>",
+        "ordinal": 11,
+        "type_info": "Datetime"
+      }
+    ],
+    "parameters": {
+      "Right": 8
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "d5afb62710262b99ad2e8b6800044a979d9b1d1f173f373bd8f43fc3c56594ae"
+}

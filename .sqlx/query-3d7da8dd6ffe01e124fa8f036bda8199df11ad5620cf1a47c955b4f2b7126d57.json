@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            SELECT height, header_hash, prev_hash, created_at as \"created_at: DateTime<Utc>\"\n            FROM block_headers WHERE header_hash = ?\n            ",
+  "describe": {
+    "columns": [
+      {
+        "name": "height",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "header_hash",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "prev_hash",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at: DateTime<Utc>",
+        "ordinal": 3,
+        "type_info": "Datetime"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "3d7da8dd6ffe01e124fa8f036bda8199df11ad5620cf1a47c955b4f2b7126d57"
+}

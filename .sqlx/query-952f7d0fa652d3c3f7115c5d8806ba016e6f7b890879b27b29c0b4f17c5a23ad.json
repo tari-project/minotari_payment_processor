@@ -1,0 +1,86 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            SELECT\n                id,\n                client_id,\n                account_name,\n                status,\n                payment_batch_id,\n                recipient_address,\n                amount,\n                payment_id,\n                failure_reason,\n                created_at as \"created_at: DateTime<Utc>\",\n                updated_at as \"updated_at: DateTime<Utc>\",\n                payref\n            FROM payments\n            WHERE status = 'RECEIVED'\n            LIMIT ?\n            ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "client_id",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "account_name",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "status",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "payment_batch_id",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "recipient_address",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "amount",
+        "ordinal": 6,
+        "type_info": "Integer"
+      },
+      {
+        "name": "payment_id",
+        "ordinal": 7,
+        "type_info": "Text"
+      },
+      {
+        "name": "failure_reason",
+        "ordinal": 8,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at: DateTime<Utc>",
+        "ordinal": 9,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "updated_at: DateTime<Utc>",
+        "ordinal": 10,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "payref",
+        "ordinal": 11,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "952f7d0fa652d3c3f7115c5d8806ba016e6f7b890879b27b29c0b4f17c5a23ad"
+}
