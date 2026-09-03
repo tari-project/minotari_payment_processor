@@ -113,6 +113,12 @@ impl TryFrom<RawSettings> for PaymentProcessorEnv {
         let tari_network = Network::from_str(&raw.tari_network)
             .context(format!("Failed to parse tari_network: {}", raw.tari_network))?;
 
+        if raw.fee_per_gram == 0 {
+            return Err(anyhow::anyhow!(
+                "fee_per_gram must be greater than 0, otherwise transactions will never be mined"
+            ));
+        }
+
         let mut accounts = HashMap::new();
         for (_key, raw_acc) in raw.accounts {
             let view_key = parse_view_key(&raw_acc.view_key)
