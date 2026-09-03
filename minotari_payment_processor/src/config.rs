@@ -40,6 +40,7 @@ pub struct PaymentProcessorEnv {
     pub confirmation_checker_sleep_secs: Option<u64>,
     pub confirmation_checker_required_confirmations: Option<u64>,
     pub max_input_count_per_tx: usize,
+    pub fee_per_gram: u64,
     pub accounts: HashMap<String, PaymentReceiverAccount>,
 }
 
@@ -71,6 +72,8 @@ struct RawSettings {
     confirmation_checker_sleep_secs: Option<u64>,
     confirmation_checker_required_confirmations: Option<u64>,
     max_input_count_per_tx: Option<usize>,
+    #[serde(default = "default_fee_per_gram")]
+    fee_per_gram: u64,
     #[serde(default)]
     accounts: HashMap<String, RawAccount>,
 }
@@ -83,6 +86,9 @@ fn default_port() -> u16 {
 }
 fn default_network_str() -> String {
     "MainNet".to_string()
+}
+fn default_fee_per_gram() -> u64 {
+    5
 }
 
 impl PaymentProcessorEnv {
@@ -153,6 +159,7 @@ impl TryFrom<RawSettings> for PaymentProcessorEnv {
             confirmation_checker_sleep_secs: raw.confirmation_checker_sleep_secs,
             confirmation_checker_required_confirmations: raw.confirmation_checker_required_confirmations,
             max_input_count_per_tx: raw.max_input_count_per_tx.unwrap_or(400).min(400),
+            fee_per_gram: raw.fee_per_gram,
             accounts,
         })
     }

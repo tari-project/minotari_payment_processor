@@ -74,6 +74,8 @@ Because the application uses structured configuration, hierarchical settings (li
     *   Example: `CONFIRMATION_CHECKER_REQUIRED_CONFIRMATIONS="10"`
 *   **`MAX_INPUT_COUNT_PER_TX`** (Optional): The max number of UTXOs, which can be used in a single transaction. If it exceeds this amount, we do a COINJOIN. Defaults to `400`.
     *   Example: `MAX_INPUT_COUNT_PER_TX="200"`
+*   **`FEE_PER_GRAM`** (Optional): The fee per gram, in MicroMinotari, used when constructing transactions. Defaults to `5`.
+    *   Example: `FEE_PER_GRAM="5"`
 *   **`REVEAL_PII`** (Optional): If set to `true` or `1`, the application will stop masking sensitive data (like wallet addresses and amounts) in logs and API outputs. Defaults to `false`.
     *   Example: `REVEAL_PII="true"`
  

@@ -40,6 +40,7 @@ async fn main() -> anyhow::Result<()> {
         env.tari_network,
         env.accounts.clone(),
         env.max_input_count_per_tx,
+        env.fee_per_gram,
         env.unsigned_tx_creator_sleep_secs,
     ));
     tokio::spawn(workers::transaction_signer::run(

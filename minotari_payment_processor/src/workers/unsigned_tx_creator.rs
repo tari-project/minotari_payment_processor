@@ -32,7 +32,6 @@ use crate::utils::log::{mask_amount, mask_string};
 use crate::workers::types::IntermediateContext;
 
 const DEFAULT_SLEEP_SECS: u64 = 15;
-const FEE_PER_GRAM: u64 = 5;
 // Buffer to ensure we have enough funds left for the final payment after paying for split fees.
 const FEE_BUFFER_AMOUNT: i64 = 200_000;
 
@@ -42,6 +41,7 @@ pub async fn run(
     network: Network,
     accounts: HashMap<String, PaymentReceiverAccount>,
     max_input_count_per_tx: usize,
+    fee_per_gram: u64,
     sleep_secs: Option<u64>,
 ) {
     let sleep_secs = sleep_secs.unwrap_or(DEFAULT_SLEEP_SECS);
@@ -54,8 +54,15 @@ pub async fn run(
 
     loop {
         interval.tick().await;
-        if let Err(e) =
-            process_unsigned_transactions(&db_pool, &client_config, network, &accounts, max_input_count_per_tx).await
+        if let Err(e) = process_unsigned_transactions(
+            &db_pool,
+            &client_config,
+            network,
+            &accounts,
+            max_input_count_per_tx,
+            fee_per_gram,
+        )
+        .await
         {
             error!(
                 error:? = e;
@@ -71,6 +78,7 @@ async fn process_unsigned_transactions(
     network: Network,
     accounts: &HashMap<String, PaymentReceiverAccount>,
     max_input_count_per_tx: usize,
+    fee_per_gram: u64,
 ) -> Result<(), anyhow::Error> {
     let mut conn = db_pool.acquire().await?;
 
@@ -91,6 +99,7 @@ async fn process_unsigned_transactions(
             accounts,
             &batch,
             max_input_count_per_tx,
+            fee_per_gram,
         )
         .await
         {
@@ -121,6 +130,7 @@ async fn process_single_batch(
     accounts: &HashMap<String, PaymentReceiverAccount>,
     batch: &PaymentBatch,
     max_input_count_per_tx: usize,
+    fee_per_gram: u64,
 ) -> Result<(), anyhow::Error> {
     let batch_id = &batch.id;
     info!(batch_id = batch_id.as_str(); "Starting processing for Batch");
@@ -157,7 +167,8 @@ async fn process_single_batch(
             "Using intermediate inputs for final transaction"
         );
 
-        let final_step = create_transaction_step(network, sender_account, inputs, &associated_payments, 0).await?;
+        let final_step =
+            create_transaction_step(network, sender_account, inputs, &associated_payments, 0, fee_per_gram).await?;
 
         let payload = BatchPayload {
             steps: vec![final_step],
@@ -228,7 +239,7 @@ async fn process_single_batch(
             let mut steps = Vec::new();
 
             for (i, chunk) in chunks.enumerate() {
-                let tx_step = create_self_spend_step(network, sender_account, chunk.to_vec(), i).await?;
+                let tx_step = create_self_spend_step(network, sender_account, chunk.to_vec(), i, fee_per_gram).await?;
                 steps.push(tx_step);
             }
 
@@ -251,7 +262,8 @@ async fn process_single_batch(
                 "Input count within limits. creating standard transaction."
             );
 
-            let step = create_transaction_step(network, sender_account, inputs, &associated_payments, 0).await?;
+            let step =
+                create_transaction_step(network, sender_account, inputs, &associated_payments, 0, fee_per_gram).await?;
 
             let payload = BatchPayload { steps: vec![step] };
             let payload_json = payload.to_json()?;
@@ -277,6 +289,7 @@ async fn prepare_signing_request(
     sender_account: &PaymentReceiverAccount,
     inputs: &[WalletOutput],
     recipients: &[PaymentRecipient],
+    fee_per_gram: u64,
 ) -> Result<String, anyhow::Error> {
     let view_wallet = ViewWallet::new(
         sender_account.public_spend_key.clone(),
@@ -289,7 +302,7 @@ async fn prepare_signing_request(
     let mut tx_builder = TransactionBuilder::new(consensus_constants, key_manager, network)
         .context("Failed to create TransactionBuilder")?;
 
-    tx_builder.with_fee_per_gram(MicroMinotari(FEE_PER_GRAM));
+    tx_builder.with_fee_per_gram(MicroMinotari(fee_per_gram));
 
     for input in inputs {
         tx_builder.with_input(input.clone()).context("Failed to add input")?;
@@ -330,6 +343,7 @@ async fn create_transaction_step(
     inputs: Vec<WalletOutput>,
     payments: &[Payment],
     step_index: usize,
+    fee_per_gram: u64,
 ) -> Result<TransactionStep, anyhow::Error> {
     let tx_id = TxId::new_random();
     let output_features = OutputFeatures::default();
@@ -355,7 +369,7 @@ async fn create_transaction_step(
             })
         })
         .collect::<Result<Vec<PaymentRecipient>, anyhow::Error>>()?;
-    let tx_json = prepare_signing_request(network, tx_id, sender_account, &inputs, &recipients).await?;
+    let tx_json = prepare_signing_request(network, tx_id, sender_account, &inputs, &recipients, fee_per_gram).await?;
 
     Ok(TransactionStep {
         step_index,
@@ -370,13 +384,14 @@ async fn create_self_spend_step(
     sender_account: &PaymentReceiverAccount,
     inputs: Vec<WalletOutput>,
     step_index: usize,
+    fee_per_gram: u64,
 ) -> Result<TransactionStep, anyhow::Error> {
     let tx_id = TxId::new_random();
 
     let total_input_value: MicroMinotari = inputs.iter().map(|p| p.value()).sum();
     let fee_calc = Fee::new(TransactionWeight::latest());
     let output_metadata_size = get_single_output_metadata_size(&fee_calc)?;
-    let calculated_fee = fee_calc.calculate(MicroMinotari(FEE_PER_GRAM), 1, inputs.len(), 1, output_metadata_size);
+    let calculated_fee = fee_calc.calculate(MicroMinotari(fee_per_gram), 1, inputs.len(), 1, output_metadata_size);
 
     if calculated_fee >= total_input_value {
         return Err(anyhow!(
@@ -406,7 +421,7 @@ async fn create_self_spend_step(
     };
 
     let recipients = vec![recipient];
-    let tx_json = prepare_signing_request(network, tx_id, sender_account, &inputs, &recipients).await?;
+    let tx_json = prepare_signing_request(network, tx_id, sender_account, &inputs, &recipients, fee_per_gram).await?;
 
     Ok(TransactionStep {
         step_index,
