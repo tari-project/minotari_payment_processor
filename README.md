@@ -44,6 +44,53 @@ If the database schema changes, you need to regenerate the documentation in `doc
 make db-dump
 ```
 
+### 3. Offline Signer Setup
+
+Transactions are signed by the standalone `minotari_offline_signer` binary. It keeps the spend and view keys in the OS keystore, encrypted with a passphrase, so it must be initialized once, out-of-band, before the processor can sign anything.
+
+#### :warning: Signer version compatibility (read this first)
+
+**The `minotari_offline_signer` binary must be built from a tari revision that uses offline-signing payload format `4.0.0`.**
+
+The unsigned payloads this service feeds the signer, and the signed payloads it reads back, are versioned. Both sides validate that version strictly and reject anything else outright. This service is pinned to a `tari_transaction_components` revision that speaks payload format `4.0.0` (see `rev` in `minotari_payment_processor/Cargo.toml`), so the signer must speak `4.0.0` too.
+
+*   **Use tari v5.3.0-pre.3 (`9f5adb7`)**, or any other revision matching the pinned `tari_transaction_components` revision. This is the earliest tari release that ships the `minotari_offline_signer` application while still on payload format `4.0.0`.
+*   **Do NOT use tari v5.4.0 or later.** v5.4.0 bumped the payload format to `5.0.0` and added a mandatory `payload_signature` field. A signer built from v5.4.0+ cannot consume the `4.0.0` payloads this service produces, and its `5.0.0` output cannot be parsed back. **Every signing attempt will fail**, batches will exhaust their retries and be marked as failed.
+
+A mismatch is reported in the log as a failure to deserialize the signed transaction, naming the payload format this service expects.
+
+Build the signer from a checkout of a matching tari revision:
+
+```sh
+git clone https://github.com/tari-project/tari.git
+cd tari
+git checkout 9f5adb7   # tari v5.3.0-pre.3, payload format 4.0.0
+cargo build --release -p minotari_offline_signer
+# binary lands in target/release/minotari_offline_signer -> point OFFLINE_SIGNER_PATH at it
+```
+
+Note that this service intentionally does **not** track the latest tari release: the unsigned payloads originate from the external Payment Receiver API, so moving to payload format `5.0.0` is a coordinated change across both services.
+
+#### Initializing the keystore
+
+The signer must be initialized once before the processor can sign anything:
+
+```sh
+# The signer reads the keystore passphrase from TARI_PASSPHRASE
+export TARI_PASSPHRASE="my_secure_passphrase"
+
+# Either from a seed phrase...
+minotari_offline_signer init seed-words --seed-words "word1 word2 ... word24"
+
+# ...or from raw keys
+minotari_offline_signer init keys --spend-key <PRIVATE_SPEND_KEY_HEX> --view-key <PRIVATE_VIEW_KEY_HEX>
+
+# Confirm that it is ready
+minotari_offline_signer status
+```
+
+The passphrase used during `init` must match the `OFFLINE_SIGNER_PASSPHRASE` given to the payment processor, otherwise signing will fail.
+
 ## Configuration
 
 The `minotari_payment_processor` is configured using environment variables. These variables can be set in a `.env` file in the project root or directly in your system environment.
@@ -61,11 +108,10 @@ Because the application uses structured configuration, hierarchical settings (li
     *   Example: `PAYMENT_RECEIVER="http://localhost:9000"`
 *   **`BASE_NODE`** (Mandatory): The URL of the Tari Base Node.
     *   Example: `BASE_NODE="https://rpc.esmeralda.tari.com"`
-*   **`CONSOLE_WALLET_PATH`** (Mandatory): The path to the `minotari_console_wallet` executable, used for signing transactions.
-*   **`CONSOLE_WALLET_BASE_PATH`** (Mandatory): Wallet base path (--base-path).
-    *   Example: `CONSOLE_WALLET_PATH="/usr/local/bin/minotari_console_wallet"`
-*   **`CONSOLE_WALLET_PASSWORD`** (Mandatory): The password for the console wallet.
-    *   Example: `CONSOLE_WALLET_PASSWORD="my_secure_password"`
+*   **`OFFLINE_SIGNER_PATH`** (Mandatory): The path to the `minotari_offline_signer` executable, used for signing transactions. The binary must be built from a tari revision using offline-signing payload format `4.0.0` (v5.3.0-pre.3 / `9f5adb7`); see [Offline Signer Setup](#3-offline-signer-setup).
+    *   Example: `OFFLINE_SIGNER_PATH="/usr/local/bin/minotari_offline_signer"`
+*   **`OFFLINE_SIGNER_PASSPHRASE`** (Mandatory): The passphrase protecting the offline signer's keystore. It is passed to the signer via the `TARI_PASSPHRASE` environment variable, never as a command line argument.
+    *   Example: `OFFLINE_SIGNER_PASSPHRASE="my_secure_passphrase"`
 *   **`LISTEN_IP`** (Optional): The IP address the HTTP API server will listen on. Defaults to `0.0.0.0`.
     *   Example: `LISTEN_IP="0.0.0.0"`
 *   **`LISTEN_PORT`** (Optional): The port the HTTP API server will listen on. Defaults to `9145`.
@@ -120,6 +166,6 @@ The workers are located in the `minotari_payment_processor/src/workers` director
 
 *   `batch_creator`: Responsible for creating new payment batches from received payments.
 *   `unsigned_tx_creator`: Creates unsigned transactions for payment batches by interacting with the Payment Receiver (PR) API.
-*   `transaction_signer`: Signs unsigned transactions using the `minotari_console_wallet`.
+*   `transaction_signer`: Signs unsigned transactions using the `minotari_offline_signer`.
 *   `broadcaster`: Broadcasts signed transactions to the Tari base node.
 *   `confirmation_checker`: Checks the confirmation status of broadcasted transactions on the Tari blockchain.

@@ -135,7 +135,7 @@ pub async fn api_create_payment(
         "API: Create Payment Request"
     );
 
-    if !state.env.accounts.contains_key(&request.account_name.to_lowercase()) {
+    if !state.accounts.contains_key(&request.account_name.to_lowercase()) {
         warn!(
             account = &*mask_string(&request.account_name);
             "API: Account not found in configuration"
@@ -217,7 +217,7 @@ pub async fn api_create_payment_batch(
         "API: Create Bulk Payment Batch"
     );
 
-    if !state.env.accounts.contains_key(&request.account_name.to_lowercase()) {
+    if !state.accounts.contains_key(&request.account_name.to_lowercase()) {
         warn!(
             account = &*mask_string(&request.account_name);
             "API: Account not found in configuration"

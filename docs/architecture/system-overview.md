@@ -3,7 +3,7 @@ graph TD
     subgraph "External"
         Client[Client App]
         ExtAPI[Wallet/Account API]
-        Console[Console Wallet CLI]
+        Signer[Offline Signer CLI]
         Node[Base Node]
     end
 
@@ -30,7 +30,7 @@ graph TD
     W_Unsigned <-->|Req Unsigned TX| ExtAPI
     
     W_Signer -->|Poll 'AwaitingSignature'| DB
-    W_Signer <-->|Exec Process| Console
+    W_Signer <-->|Exec Process| Signer
     
     W_Broadcast -->|Poll 'AwaitingBroadcast'| DB
     W_Broadcast -->|Submit TX| Node
