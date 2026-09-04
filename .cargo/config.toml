@@ -1,0 +1,5 @@
+[alias]
+ci-clippy = "lints clippy --all-targets --all-features"
+ci-test-compile = "test --no-run --workspace --all-features --no-default-features"
+ci-test = "nextest run --all-features --release --workspace --exclude tari_integration_tests --profile ci --no-fail-fast"
+ci-check = "check --release --all-targets --workspace --exclude tari_integration_tests --locked"
