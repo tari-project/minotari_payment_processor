@@ -4,20 +4,27 @@ use axum::{
     routing::{get, post},
 };
 use sqlx::SqlitePool;
+use std::{collections::HashMap, sync::Arc};
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
-use crate::config::PaymentProcessorEnv;
+use crate::config::PaymentReceiverAccount;
 
 mod error;
 mod events;
 mod payments;
 mod version;
 
+/// The state shared with every request handler.
+///
+/// This deliberately carries only what the handlers actually read, rather than the whole
+/// [`crate::config::PaymentProcessorEnv`], so that secrets held by the configuration (such as the
+/// offline signer passphrase) never reach the HTTP layer. The accounts map is behind an `Arc`
+/// because Axum clones the state for every request that extracts it.
 #[derive(Clone)]
 pub struct AppState {
     pub db_pool: SqlitePool,
-    pub env: PaymentProcessorEnv,
+    pub accounts: Arc<HashMap<String, PaymentReceiverAccount>>,
 }
 
 impl FromRef<AppState> for SqlitePool {
@@ -59,8 +66,8 @@ impl FromRef<AppState> for SqlitePool {
 )]
 pub struct ApiDoc;
 
-pub fn create_router(db_pool: SqlitePool, env: PaymentProcessorEnv) -> Router {
-    let app_state = AppState { db_pool, env };
+pub fn create_router(db_pool: SqlitePool, accounts: Arc<HashMap<String, PaymentReceiverAccount>>) -> Router {
+    let app_state = AppState { db_pool, accounts };
 
     Router::new()
         .merge(SwaggerUi::new("/swagger-ui").url("/openapi.json", ApiDoc::openapi()))

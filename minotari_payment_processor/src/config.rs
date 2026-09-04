@@ -1,7 +1,7 @@
 use anyhow::Context;
 use config::{Config, Environment};
 use serde::Deserialize;
-use std::{collections::HashMap, str::FromStr};
+use std::{collections::HashMap, fmt, str::FromStr};
 use tari_common::configuration::Network;
 use tari_common_types::{
     tari_address::{TariAddress, TariAddressFeatures},
@@ -13,6 +13,37 @@ use tari_crypto::{
     ristretto::{RistrettoPublicKey, RistrettoSecretKey},
 };
 use tari_utilities::ByteArray;
+
+/// A secret string that must never end up in a log line.
+///
+/// The newtype exists so that the plaintext cannot leak through the `Debug` impl of any struct
+/// that holds it: [`PaymentProcessorEnv`] derives `Debug`, and a bare `String` field would be
+/// printed verbatim by any `{:?}` rendering of it. There is deliberately no `Display` impl, so the
+/// only way to reach the plaintext is the explicit [`Passphrase::reveal`] accessor.
+#[derive(Clone)]
+pub struct Passphrase(String);
+
+impl Passphrase {
+    /// Returns the plaintext secret.
+    ///
+    /// Call this only where the secret is genuinely required (handing it to the offline signer
+    /// through its environment), never to log, display or persist it.
+    pub fn reveal(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for Passphrase {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl fmt::Debug for Passphrase {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Passphrase(***REDACTED***)")
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct PaymentReceiverAccount {
@@ -28,9 +59,8 @@ pub struct PaymentProcessorEnv {
     pub database_url: String,
     pub payment_receiver: String,
     pub base_node: String,
-    pub console_wallet_path: String,
-    pub console_wallet_base_path: String,
-    pub console_wallet_password: String,
+    pub offline_signer_path: String,
+    pub offline_signer_passphrase: Passphrase,
     pub listen_ip: String,
     pub listen_port: u16,
     pub batch_creator_sleep_secs: Option<u64>,
@@ -58,9 +88,8 @@ struct RawSettings {
     database_url: String,
     payment_receiver: String,
     base_node: String,
-    console_wallet_path: String,
-    console_wallet_base_path: String,
-    console_wallet_password: String,
+    offline_signer_path: String,
+    offline_signer_passphrase: String,
     #[serde(default = "default_ip")]
     listen_ip: String,
     #[serde(default = "default_port")]
@@ -94,9 +123,13 @@ fn default_fee_per_gram() -> u64 {
 impl PaymentProcessorEnv {
     pub fn load() -> anyhow::Result<Self> {
         // For nested HashMaps (accounts), it supports "ACCOUNTS__KEY__FIELD" syntax.
-        let s = Config::builder()
-            .add_source(Environment::default().separator("__"))
-            .build()?;
+        Self::load_from(Environment::default().separator("__"))
+    }
+
+    /// Builds the settings from the given environment source. Kept separate from [`Self::load`] so
+    /// that tests can supply a deterministic set of variables instead of the process environment.
+    fn load_from(source: Environment) -> anyhow::Result<Self> {
+        let s = Config::builder().add_source(source).build()?;
 
         let raw: RawSettings = s
             .try_deserialize()
@@ -153,9 +186,8 @@ impl TryFrom<RawSettings> for PaymentProcessorEnv {
             database_url: raw.database_url,
             payment_receiver: raw.payment_receiver,
             base_node: raw.base_node,
-            console_wallet_path: raw.console_wallet_path,
-            console_wallet_base_path: raw.console_wallet_base_path,
-            console_wallet_password: raw.console_wallet_password,
+            offline_signer_path: raw.offline_signer_path,
+            offline_signer_passphrase: raw.offline_signer_passphrase.into(),
             listen_ip: raw.listen_ip,
             listen_port: raw.listen_port,
             batch_creator_sleep_secs: raw.batch_creator_sleep_secs,
@@ -182,4 +214,107 @@ fn parse_public_spend_key(public_spend_key_hex: &str) -> anyhow::Result<Compress
     let spend_key =
         CompressedKey::<RistrettoPublicKey>::from_canonical_bytes(&spend_key_bytes).map_err(|e| anyhow::anyhow!(e))?;
     Ok(spend_key)
+}
+
+#[cfg(test)]
+mod tests {
+    use config::Map;
+
+    use super::*;
+
+    fn base_vars() -> Map<String, String> {
+        let mut vars = Map::new();
+        vars.insert("DATABASE_URL".to_string(), "sqlite://data/payments.db".to_string());
+        vars.insert("PAYMENT_RECEIVER".to_string(), "http://localhost:9000".to_string());
+        vars.insert("BASE_NODE".to_string(), "http://localhost:18142".to_string());
+        vars.insert(
+            "OFFLINE_SIGNER_PATH".to_string(),
+            "/usr/local/bin/minotari_offline_signer".to_string(),
+        );
+        vars.insert("OFFLINE_SIGNER_PASSPHRASE".to_string(), "s3cr3t".to_string());
+        vars
+    }
+
+    fn load(vars: Map<String, String>) -> anyhow::Result<PaymentProcessorEnv> {
+        PaymentProcessorEnv::load_from(Environment::default().separator("__").source(Some(vars)))
+    }
+
+    #[test]
+    fn it_reads_the_offline_signer_settings_from_the_environment() {
+        let env = load(base_vars()).expect("config with all mandatory variables should load");
+
+        assert_eq!(env.offline_signer_path, "/usr/local/bin/minotari_offline_signer");
+        assert_eq!(env.offline_signer_passphrase.reveal(), "s3cr3t");
+        assert_eq!(env.tari_network, Network::MainNet);
+    }
+
+    #[test]
+    fn it_fails_when_the_offline_signer_path_is_missing() {
+        let mut vars = base_vars();
+        vars.remove("OFFLINE_SIGNER_PATH");
+
+        let err = load(vars).expect_err("missing OFFLINE_SIGNER_PATH should be rejected");
+        assert!(
+            format!("{:#}", err).contains("offline_signer_path"),
+            "unexpected error: {:#}",
+            err
+        );
+    }
+
+    #[test]
+    fn it_fails_when_the_offline_signer_passphrase_is_missing() {
+        let mut vars = base_vars();
+        vars.remove("OFFLINE_SIGNER_PASSPHRASE");
+
+        let err = load(vars).expect_err("missing OFFLINE_SIGNER_PASSPHRASE should be rejected");
+        assert!(
+            format!("{:#}", err).contains("offline_signer_passphrase"),
+            "unexpected error: {:#}",
+            err
+        );
+    }
+
+    #[test]
+    fn it_rejects_a_zero_fee_per_gram() {
+        let mut vars = base_vars();
+        vars.insert("FEE_PER_GRAM".to_string(), "0".to_string());
+
+        let err = load(vars).expect_err("a zero fee_per_gram should be rejected");
+        assert!(
+            format!("{:#}", err).contains("fee_per_gram"),
+            "unexpected error: {:#}",
+            err
+        );
+    }
+
+    #[test]
+    fn it_redacts_the_passphrase_when_debug_formatted() {
+        let passphrase = Passphrase::from("s3cr3t".to_string());
+
+        let rendered = format!("{:?}", passphrase);
+        assert!(
+            !rendered.contains("s3cr3t"),
+            "the plaintext passphrase leaked into the Debug output: {}",
+            rendered
+        );
+        assert_eq!(rendered, "Passphrase(***REDACTED***)");
+        assert_eq!(passphrase.reveal(), "s3cr3t");
+    }
+
+    #[test]
+    fn it_redacts_the_passphrase_when_the_whole_env_is_debug_formatted() {
+        let env = load(base_vars()).expect("config with all mandatory variables should load");
+
+        let rendered = format!("{:?}", env);
+        assert!(
+            !rendered.contains("s3cr3t"),
+            "the plaintext passphrase leaked into the Debug output of PaymentProcessorEnv: {}",
+            rendered
+        );
+        assert!(
+            rendered.contains("***REDACTED***"),
+            "unexpected Debug output: {}",
+            rendered
+        );
+    }
 }

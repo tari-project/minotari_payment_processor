@@ -14,7 +14,6 @@ async fn main() -> anyhow::Result<()> {
 
     dotenv().ok();
     let env = PaymentProcessorEnv::load()?;
-    let app_env = env.clone();
 
     info!("Starting Minotari Payment Processor...");
 
@@ -46,9 +45,8 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(workers::transaction_signer::run(
         db_pool.clone(),
         env.tari_network,
-        env.console_wallet_path.clone(),
-        env.console_wallet_base_path.clone(),
-        env.console_wallet_password.clone(),
+        env.offline_signer_path.clone(),
+        env.offline_signer_passphrase,
         env.transaction_signer_sleep_secs,
     ));
     tokio::spawn(workers::broadcaster::run(
@@ -64,8 +62,9 @@ async fn main() -> anyhow::Result<()> {
     ));
     info!("Minotari Payment Processor started. Press Ctrl+C to shut down.");
 
-    // Create Axum API router
-    let app = api::create_router(db_pool.clone(), app_env);
+    // Create Axum API router. Only the accounts map is handed to the HTTP layer; the rest of the
+    // configuration (including the offline signer passphrase) stays out of the request state.
+    let app = api::create_router(db_pool.clone(), Arc::new(env.accounts));
     let addr = format!("{}:{}", env.listen_ip, env.listen_port);
     let listener = TcpListener::bind(&addr).await?;
     info!(

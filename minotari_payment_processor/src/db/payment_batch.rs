@@ -19,9 +19,9 @@ const MAX_RETRIES: i64 = 10;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data")]
 pub enum StepPayload {
-    /// The payload needed by the Console Wallet to generate a signature.
+    /// The payload needed by the offline signer to generate a signature.
     Unsigned(String),
-    /// The payload returned by the Console Wallet, ready for Broadcast.
+    /// The payload returned by the offline signer, ready for Broadcast.
     Signed(String),
 }
 
