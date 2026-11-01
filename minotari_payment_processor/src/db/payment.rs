@@ -449,7 +449,7 @@ impl Payment {
         Ok(PaymentStatus::Cancelled)
     }
 
-    /// Updates the status of all payments in a batch to 'FAILED' with a reason.
+    /// Updates the status of all non-cancelled payments in a batch to 'FAILED' with a reason.
     pub async fn fail_payments_in_batch(
         pool: &mut SqliteConnection,
         batch_id: &str,
@@ -458,19 +458,21 @@ impl Payment {
         warn!(
             batch_id = batch_id,
             reason = reason;
-            "DB: Failing all payments in batch"
+            "DB: Failing all active payments in batch"
         );
         let status_failed = PaymentStatus::Failed.to_string();
-        sqlx::query!(
+        let status_cancelled = PaymentStatus::Cancelled.to_string();
+        sqlx::query(
             r#"
             UPDATE payments
             SET status = ?, failure_reason = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE payment_batch_id = ?
+            WHERE payment_batch_id = ? AND status != ?
             "#,
-            status_failed,
-            reason,
-            batch_id,
         )
+        .bind(status_failed)
+        .bind(reason)
+        .bind(batch_id)
+        .bind(status_cancelled)
         .execute(pool)
         .await?;
         Ok(())

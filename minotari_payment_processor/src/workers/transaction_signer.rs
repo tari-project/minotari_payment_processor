@@ -106,25 +106,19 @@ async fn process_transactions_to_sign(
             error!(
                 batch_id = &*batch.id,
                 error = &*error_message;
-                "Error signing batch. Attempting to revert status..."
+                "Error signing batch. Updating retry state..."
             );
 
-            let revert_result = if let Some(json) = &batch.unsigned_tx_json {
-                PaymentBatch::update_to_awaiting_signature(&mut conn, &batch.id, json).await
-            } else {
-                Err(anyhow::anyhow!("Cannot revert: Batch missing unsigned_tx_json"))?
-            };
-
-            match revert_result {
-                Ok(_) => info!(batch_id = &*batch.id; "Batch reverted to 'AwaitingSignature'"),
-                Err(revert_e) => error!(
-                    batch_id = &*batch.id,
-                    error:? = revert_e;
-                    "Failed to revert batch status"
-                ),
-            }
-
-            if let Err(db_err) = PaymentBatch::increment_retry_count(&mut conn, &batch.id, &error_message).await {
+            if batch.unsigned_tx_json.is_none() {
+                if let Err(db_err) = PaymentBatch::update_to_failed(&mut conn, &batch.id, &error_message).await {
+                    error!(
+                        batch_id = &*batch.id,
+                        error:? = db_err;
+                        "Failed to mark batch as failed"
+                    );
+                }
+            } else if let Err(db_err) = PaymentBatch::increment_retry_count(&mut conn, &batch.id, &error_message).await
+            {
                 error!(
                     batch_id = &*batch.id,
                     error:? = db_err;

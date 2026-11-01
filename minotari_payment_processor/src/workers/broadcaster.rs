@@ -60,13 +60,13 @@ async fn process_transactions_to_broadcast(
                 "Error broadcasting batch. Attempting to revert status..."
             );
 
-            match PaymentBatch::update_to_awaiting_broadcast_for_retry(&mut conn, &batch.id).await {
-                Ok(_) => info!(batch_id = &*batch.id; "Batch reverted to 'AwaitingBroadcast'"),
+            match PaymentBatch::increment_retry_count(&mut conn, &batch.id, &error_message).await {
+                Ok(_) => info!(batch_id = &*batch.id; "Updated broadcast retry state for batch"),
                 Err(revert_e) => {
                     error!(
                         batch_id = &*batch.id,
                         error:? = revert_e;
-                        "Failed to revert batch status"
+                        "Failed to update broadcast retry state for batch"
                     )
                 },
             }

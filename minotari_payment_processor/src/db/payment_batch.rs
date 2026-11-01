@@ -397,7 +397,13 @@ impl PaymentBatch {
             separator(&mut qb);
             qb.push("retry_count = retry_count + 1");
         } else if let Some(new_status) = &update.status
-            && !matches!(new_status, PaymentBatchStatus::Failed | PaymentBatchStatus::Cancelled)
+            && !matches!(
+                new_status,
+                PaymentBatchStatus::Failed
+                    | PaymentBatchStatus::Cancelled
+                    | PaymentBatchStatus::SigningInProgress
+                    | PaymentBatchStatus::Broadcasting
+            )
         {
             separator(&mut qb);
             qb.push("retry_count = 0");
@@ -467,18 +473,12 @@ impl PaymentBatch {
         Ok(())
     }
 
-    /// Updates a payment batch to 'AWAITING_BROADCAST' status for retry.
+    /// Updates a payment batch to 'AWAITING_BROADCAST' status for retry, or marks it FAILED if max retries reached.
     pub async fn update_to_awaiting_broadcast_for_retry(
         pool: &mut SqliteConnection,
         batch_id: &str,
     ) -> Result<(), sqlx::Error> {
-        let update = PaymentBatchUpdate {
-            status: Some(PaymentBatchStatus::AwaitingBroadcast),
-            ..Default::default()
-        };
-        Self::update_payment_batch_status(pool, batch_id, &update, true)
-            .await
-            .map(|_| ())
+        Self::increment_retry_count(pool, batch_id, "Broadcast failed; retrying").await
     }
 
     /// Updates a payment batch to 'BROADCASTING' status.
@@ -681,8 +681,22 @@ impl PaymentBatch {
                 error_message: Some(error_message),
                 ..Default::default()
             };
-            Self::update_payment_batch_status(&mut tx, batch_id, &update, false).await?;
+            let account_name = Self::update_payment_batch_status(&mut tx, batch_id, &update, false).await?;
             Payment::fail_payments_in_batch(&mut tx, batch_id, error_message).await?;
+
+            Event::insert(
+                &mut tx,
+                EventType::BatchFailed,
+                format!("Batch failed after {} retries: {}", MAX_RETRIES, error_message),
+                Some(serde_json::json!({
+                    "error": error_message,
+                    "retries": MAX_RETRIES
+                })),
+                account_name,
+                None,
+                Some(batch_id.to_string()),
+            )
+            .await?;
 
             info!(
                 target: "audit",
@@ -692,14 +706,22 @@ impl PaymentBatch {
                 "DB: Batch FAILED after retries"
             );
         } else {
-            // No fields to update other than incrementing retry_count.
             debug!(
                 batch_id = batch_id,
                 new_count = batch.retry_count + 1,
                 error = error_message;
                 "DB: Batch incrementing retry count"
             );
-            let update = PaymentBatchUpdate::default();
+            let retry_status = match batch.status {
+                PaymentBatchStatus::SigningInProgress => Some(PaymentBatchStatus::AwaitingSignature),
+                PaymentBatchStatus::Broadcasting => Some(PaymentBatchStatus::AwaitingBroadcast),
+                _ => None,
+            };
+            let update = PaymentBatchUpdate {
+                status: retry_status,
+                error_message: Some(error_message),
+                ..Default::default()
+            };
             Self::update_payment_batch_status(&mut tx, batch_id, &update, true).await?;
         }
 
@@ -749,5 +771,95 @@ impl PaymentBatch {
         .await?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::init_db;
+
+    #[tokio::test]
+    async fn signing_and_broadcast_retries_preserve_retry_count_and_preserve_cancelled_payments() {
+        let pool = init_db("sqlite::memory:").await.unwrap();
+        let mut conn = pool.acquire().await.unwrap();
+
+        let p1 = Payment::create(&mut conn, "c1", "default", "addr1", 1000, None, None)
+            .await
+            .unwrap();
+        let p2 = Payment::create(&mut conn, "c2", "default", "addr2", 2000, None, None)
+            .await
+            .unwrap();
+
+        let batch = PaymentBatch::create_with_payments(&mut conn, "default", "idem-1", &[p1.id.clone(), p2.id.clone()])
+            .await
+            .unwrap();
+        Payment::update_to_cancelled(&mut conn, &p2.id).await.unwrap();
+        PaymentBatch::update_to_awaiting_signature(&mut conn, &batch.id, "{}")
+            .await
+            .unwrap();
+
+        for expected_retry in 1..MAX_RETRIES {
+            PaymentBatch::update_to_signing_in_progress(&mut conn, &batch.id)
+                .await
+                .unwrap();
+            let in_progress = PaymentBatch::find_by_id(&mut conn, &batch.id).await.unwrap().unwrap();
+            assert_eq!(in_progress.retry_count, expected_retry - 1);
+
+            PaymentBatch::increment_retry_count(&mut conn, &batch.id, "signer failed")
+                .await
+                .unwrap();
+            let reverted = PaymentBatch::find_by_id(&mut conn, &batch.id).await.unwrap().unwrap();
+            assert!(matches!(reverted.status, PaymentBatchStatus::AwaitingSignature));
+            assert_eq!(reverted.retry_count, expected_retry);
+        }
+
+        // The 10th failure reaches MAX_RETRIES and marks the batch FAILED while keeping p2 CANCELLED.
+        PaymentBatch::update_to_signing_in_progress(&mut conn, &batch.id)
+            .await
+            .unwrap();
+        PaymentBatch::increment_retry_count(&mut conn, &batch.id, "signer failed")
+            .await
+            .unwrap();
+
+        let failed_batch = PaymentBatch::find_by_id(&mut conn, &batch.id).await.unwrap().unwrap();
+        assert!(matches!(failed_batch.status, PaymentBatchStatus::Failed));
+
+        let p1_after = Payment::get_by_id(&mut conn, &p1.id).await.unwrap().unwrap();
+        let p2_after = Payment::get_by_id(&mut conn, &p2.id).await.unwrap().unwrap();
+        assert!(matches!(p1_after.status, PaymentStatus::Failed));
+        assert!(matches!(p2_after.status, PaymentStatus::Cancelled));
+
+        let p3 = Payment::create(&mut conn, "c3", "default", "addr3", 3000, None, None)
+            .await
+            .unwrap();
+        let batch2 = PaymentBatch::create_with_payments(&mut conn, "default", "idem-2", &[p3.id.clone()])
+            .await
+            .unwrap();
+        PaymentBatch::update_to_awaiting_broadcast(&mut conn, &batch2.id, "{}", None)
+            .await
+            .unwrap();
+        for expected_retry in 1..MAX_RETRIES {
+            PaymentBatch::update_to_broadcasting(&mut conn, &batch2.id)
+                .await
+                .unwrap();
+            let in_progress = PaymentBatch::find_by_id(&mut conn, &batch2.id).await.unwrap().unwrap();
+            assert_eq!(in_progress.retry_count, expected_retry - 1);
+
+            PaymentBatch::update_to_awaiting_broadcast_for_retry(&mut conn, &batch2.id)
+                .await
+                .unwrap();
+            let reverted = PaymentBatch::find_by_id(&mut conn, &batch2.id).await.unwrap().unwrap();
+            assert!(matches!(reverted.status, PaymentBatchStatus::AwaitingBroadcast));
+            assert_eq!(reverted.retry_count, expected_retry);
+        }
+        PaymentBatch::update_to_broadcasting(&mut conn, &batch2.id)
+            .await
+            .unwrap();
+        PaymentBatch::update_to_awaiting_broadcast_for_retry(&mut conn, &batch2.id)
+            .await
+            .unwrap();
+        let failed_batch2 = PaymentBatch::find_by_id(&mut conn, &batch2.id).await.unwrap().unwrap();
+        assert!(matches!(failed_batch2.status, PaymentBatchStatus::Failed));
     }
 }

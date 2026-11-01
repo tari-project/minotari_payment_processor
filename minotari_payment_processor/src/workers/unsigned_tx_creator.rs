@@ -141,7 +141,7 @@ async fn process_single_batch(
 
     if associated_payments.is_empty() {
         warn!(batch_id = batch_id.as_str(); "Batch has no active payments. Marking batch as CANCELLED.");
-        PaymentBatch::update_to_failed(conn, batch_id, "No active payments found in batch").await?;
+        PaymentBatch::cancel_batch_internal(conn, batch_id).await?;
         return Ok(());
     }
 
